@@ -132,6 +132,14 @@ found:
     return 0;
   }
 
+#ifdef LAB_PGTBL
+  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+#endif
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -158,6 +166,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+#ifdef LAB_PGTBL
+  if(p->usyscall)
+    kfree((void*)p->usyscall);
+  p->usyscall = 0;
+#endif
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -202,6 +215,15 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+#ifdef LAB_PGTBL
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->usyscall), PTE_R | PTE_W | PTE_U) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+#endif
   return pagetable;
 }
 
@@ -212,6 +234,9 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+#ifdef LAB_PGTBL
+  uvmunmap(pagetable, USYSCALL, 1, 0);
+#endif
   uvmfree(pagetable, sz);
 }
 
@@ -245,6 +270,10 @@ userinit(void)
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
+
+#ifdef LAB_PGTBL
+  p->usyscall->pid = p->pid;
+#endif
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -301,6 +330,10 @@ fork(void)
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
+
+#ifdef LAB_PGTBL
+  np->usyscall->pid = np->pid;
+#endif
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
