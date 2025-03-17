@@ -1,0 +1,7 @@
+usertrap()
+7, the syscall number
+Current mode: S mode, Previous mode: U mode
+    80001c76:	00002903          	lw	s2,0(zero) # 0 <_entry-0x80000000>
+s2 register
+Store/AMO access fault, address 0 is unmapped
+p->name = "initcode", p->pid = 1
