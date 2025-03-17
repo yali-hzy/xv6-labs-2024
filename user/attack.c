@@ -6,8 +6,16 @@
 int
 main(int argc, char *argv[])
 {
-  // your code here.  you should write the secret to fd 2 using write
-  // (e.g., write(2, secret, 8)
-
-  exit(1);
+  const char* symbol = "my very very very secret pw is:   ";
+  char *end = sbrk(PGSIZE*32);
+  for(int i = 0; i < 32; i++){
+    int count = 0;
+    for(int j = 0; j < strlen(symbol); j++)
+      if(end[i * PGSIZE + j] == symbol[j])
+        count++;
+    if(count > strlen(symbol) / 2){
+      write(2, end + i * PGSIZE + 32, 8);
+    }
+  }
+  exit(0);
 }
