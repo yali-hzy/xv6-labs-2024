@@ -590,10 +590,10 @@ vmprint_helper(pagetable_t pagetable, uint64 va, int level) {
     pte_t pte = pagetable[i];
     if((pte & PTE_V)){
       uint64 child = PTE2PA(pte);
-      for(int j = level; j < 2; j++)
+      for(int j = level; j <= 2; j++)
         printf(" ..");
       uint64 child_va = va + (i << (12 + level * 9));
-      printf(" %p: pte %p pa %p\n", (void *)child_va, (void *)pte, (void *)child);
+      printf("%p: pte %p pa %p\n", (void *)child_va, (void *)pte, (void *)child);
       if(!PTE_LEAF(pte))
         vmprint_helper((pagetable_t)child, child_va, level - 1);
     }
