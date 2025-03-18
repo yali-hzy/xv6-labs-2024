@@ -272,7 +272,6 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
 #ifdef LAB_PGTBL
       if(l == 1) {
-        superfree((void*)pa);
         int perm = *pte & 0xFFF;
         *pte = 0;
         flag = 1;
@@ -283,10 +282,12 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
             if(mem == 0)
               panic("uvmunmap: kalloc");
             mappages(pagetable, i, PGSIZE, (uint64)mem, perm);
+            memmove(mem, (char*)pa + i - SUPERPGROUNDDOWN(a), PGSIZE);
           }
           a = SUPERPGROUNDUP(a);
           sz = 0;
         }
+        superfree((void*)pa);
       } else
 #endif
       kfree((void*)pa);
