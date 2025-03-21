@@ -17,6 +17,19 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
 // qemu host's ethernet address.
 static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
+struct port {
+  int binded;
+  int head;
+  int tail;
+  int len;
+  struct {
+    char *buf;
+    int len;
+    int src;
+    short sport;
+  } bufs[16];
+} ports[65536];
+
 static struct spinlock netlock;
 
 void
@@ -34,11 +47,13 @@ netinit(void)
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
-
-  return -1;
+  acquire(&netlock);
+  int port;
+  argint(0, &port);
+  memset(&ports[port], 0, sizeof(ports[port]));
+  ports[port].binded = 1;
+  release(&netlock);
+  return 0;
 }
 
 //
@@ -49,10 +64,11 @@ sys_bind(void)
 uint64
 sys_unbind(void)
 {
-  //
-  // Optional: Your code here.
-  //
-
+  acquire(&netlock);
+  int port;
+  argint(0, &port);
+  memset(&ports[port], 0, sizeof(ports[port]));
+  release(&netlock);
   return 0;
 }
 
@@ -77,7 +93,48 @@ sys_recv(void)
   //
   // Your code here.
   //
-  return -1;
+  acquire(&netlock);
+  int dport;
+  uint64 src;
+  uint64 sport;
+  uint64 bufaddr;
+  int maxlen;
+  struct proc *p = myproc();
+
+  argint(0, &dport);
+  argaddr(1, &src);
+  argaddr(2, &sport);
+  argaddr(3, &bufaddr);
+  argint(4, &maxlen);
+  if(!ports[dport].binded){
+    release(&netlock);
+    return -1;
+  }
+  while(ports[dport].len == 0)
+    sleep(&ports[dport], &netlock);
+  if(copyout(p->pagetable, src, (char *)&ports[dport].bufs[ports[dport].head].src, sizeof(int)) < 0){
+    printf("recv: copyout failed\n");
+    release(&netlock);
+    return -1;
+  }
+  if(copyout(p->pagetable, sport, (char *)&ports[dport].bufs[ports[dport].head].sport, sizeof(short)) < 0){
+    printf("recv: copyout failed\n");
+    release(&netlock);
+    return -1;
+  }
+  int len = ports[dport].bufs[ports[dport].head].len;
+  if(len > maxlen)
+    len = maxlen;
+  if(copyout(p->pagetable, bufaddr, ports[dport].bufs[ports[dport].head].buf, len) < 0){
+    printf("recv: copyout failed\n");
+    release(&netlock);
+    return -1;
+  }
+  kfree(ports[dport].bufs[ports[dport].head].buf);
+  ports[dport].head = (ports[dport].head + 1) % 16;
+  ports[dport].len--;
+  release(&netlock);
+  return len;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -188,10 +245,28 @@ ip_rx(char *buf, int len)
     printf("ip_rx: received an IP packet\n");
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+  struct ip *ip = (struct ip *)(buf + sizeof(struct eth));
+  struct udp *udp = (struct udp *)(buf + sizeof(struct eth) + sizeof(struct ip));
+  char *payload = buf + sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp);
+  if(ip->ip_p == IPPROTO_UDP){
+    int dport = ntohs(udp->dport);
+    acquire(&netlock);
+    if(ports[dport].binded){
+      if(ports[dport].len < 16){
+        ports[dport].bufs[ports[dport].tail].buf = kalloc();
+        memmove(ports[dport].bufs[ports[dport].tail].buf, payload, ntohs(udp->ulen) - sizeof(struct udp));
+        ports[dport].bufs[ports[dport].tail].len = ntohs(udp->ulen) - sizeof(struct udp);
+        ports[dport].bufs[ports[dport].tail].src = ntohl(ip->ip_src);
+        ports[dport].bufs[ports[dport].tail].sport = ntohs(udp->sport);
+        ports[dport].tail = (ports[dport].tail + 1) % 16;
+        ports[dport].len++;
+        if(ports[dport].len == 1)
+          wakeup(&ports[dport]);
+      }
+    }
+    release(&netlock);
+  }
+  kfree(buf);
 }
 
 //
