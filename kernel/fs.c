@@ -486,10 +486,10 @@ itrunc(struct inode *ip)
     for(i = 0; i < NINDIRECT; i++){
       if(a[i]){
         struct buf *bp = bread(ip->dev, a[i]);
-        uint *a = (uint*)bp->data;
+        uint *b = (uint*)bp->data;
         for(j = 0; j < NINDIRECT; j++){
-          if(a[j])
-            bfree(ip->dev, a[j]);
+          if(b[j])
+            bfree(ip->dev, b[j]);
         }
         brelse(bp);
         bfree(ip->dev, a[i]);
